@@ -5,8 +5,13 @@ on:
     branches: [master]
   workflow_dispatch:
 
+<<<<<<< HEAD
 permissions:
   contents: write
+=======
+permissions:              # ← 加这行
+  contents: write         # ← 加这行
+>>>>>>> 5cca70cb25084ba1c0551cb3fb66885012ac8eb9
 
 jobs:
   build:
