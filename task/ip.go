@@ -250,6 +250,18 @@ func loadIPRanges() []*net.IPAddr {
 				ranges.parseCIDR(cidr)
 				ranges.chooseIPv4()
 			}
+			for _, cidr := range cmPreferredV4Ranges {
+				ranges.parseCIDR(cidr)
+				ranges.chooseIPv4()
+			}
+			for _, cidr := range as13335V4Ranges {
+				ranges.parseCIDR(cidr)
+				ranges.chooseIPv4()
+			}
+			for _, cidr := range as209242V4Ranges {
+				ranges.parseCIDR(cidr)
+				ranges.chooseIPv4()
+			}
 			for _, cidr := range defaultIPv6Ranges {
 				ranges.parseCIDR(cidr)
 				ranges.chooseIPv6()
