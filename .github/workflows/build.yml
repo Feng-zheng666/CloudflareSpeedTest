@@ -5,8 +5,6 @@ on:
     branches: [master]
   workflow_dispatch:
 
-permissions:              # ← 加这行
-  contents: write         # ← 加这行
 
 permissions:
   contents: write
