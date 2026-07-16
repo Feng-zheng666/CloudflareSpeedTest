@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sort"
@@ -12,7 +13,7 @@ import (
 )
 
 const (
-	tcpConnectTimeout = time.Second * 1
+	tcpConnectTimeout = time.Millisecond * 500
 	maxRoutine        = 1000
 	defaultRoutines   = 200
 	defaultPort       = 443
@@ -86,7 +87,7 @@ func (p *Ping) start(ip *net.IPAddr) {
 }
 
 // bool connectionSucceed float32 time
-func (p *Ping) tcpingSingle(ip *net.IPAddr) (bool, time.Duration) {
+func (p *Ping) tcpingSingle(ctx context.Context, ip *net.IPAddr) (bool, time.Duration) {
 	startTime := time.Now()
 	var fullAddress string
 	if IsIPv4(ip.String()) {
@@ -94,7 +95,8 @@ func (p *Ping) tcpingSingle(ip *net.IPAddr) (bool, time.Duration) {
 	} else {
 		fullAddress = fmt.Sprintf("[%s]:%d", ip.String(), TCPPort)
 	}
-	conn, err := net.DialTimeout("tcp", fullAddress, tcpConnectTimeout)
+	d := net.Dialer{Timeout: tcpConnectTimeout}
+	conn, err := d.DialContext(ctx, "tcp", fullAddress)
 	if err != nil {
 		return false, 0
 	}
@@ -102,8 +104,11 @@ func (p *Ping) tcpingSingle(ip *net.IPAddr) (bool, time.Duration) {
 	return true, time.Since(startTime)
 }
 
-// tcpingConcurrent 并发 TCP Ping，同一 IP 的多次探测并行执行，提升测速效率
+// tcpingConcurrent 并发 TCP Ping，首次成功即取消其余探测，大幅提升测速效率
 func (p *Ping) tcpingConcurrent(ip *net.IPAddr) (recv int, totalDelay time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), tcpConnectTimeout)
+	defer cancel()
+
 	type result struct {
 		ok    bool
 		delay time.Duration
@@ -111,15 +116,20 @@ func (p *Ping) tcpingConcurrent(ip *net.IPAddr) (recv int, totalDelay time.Durat
 	results := make(chan result, PingTimes)
 	for i := 0; i < PingTimes; i++ {
 		go func() {
-			ok, delay := p.tcpingSingle(ip)
+			ok, delay := p.tcpingSingle(ctx, ip)
 			results <- result{ok, delay}
 		}()
 	}
+
+	// 收到第一个成功结果后立即取消其余 goroutine，不通的 IP 也只需等一次超时
 	for i := 0; i < PingTimes; i++ {
 		r := <-results
 		if r.ok {
 			recv++
 			totalDelay += r.delay
+			if recv == 1 {
+				cancel()
+			}
 		}
 	}
 	return
