@@ -224,25 +224,34 @@ func loadIPRanges() []*net.IPAddr {
 				ranges.chooseIPv6()
 			}
 		}
-	} else { // 从文件中获取 IP 段数据
+	} else { // 从文件或内置数据中获取 IP 段
 		if IPFile == "" {
 			IPFile = defaultInputFile
 		}
 		file, err := os.Open(IPFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() { // 循环遍历文件每一行
-			line := strings.TrimSpace(scanner.Text()) // 去除首尾的空白字符（空格、制表符、换行符等）
-			if line == "" {                           // 跳过空行
-				continue
+		if err == nil {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() { // 循环遍历文件每一行
+				line := strings.TrimSpace(scanner.Text()) // 去除首尾的空白字符（空格、制表符、换行符等）
+				if line == "" {                           // 跳过空行
+					continue
+				}
+				ranges.parseCIDR(line) // 解析 IP 段，获得 IP、IP 范围、子网掩码
+				if IsIPv4(line) {      // 生成要测速的所有 IPv4 / IPv6 地址（单个/随机/全部）
+					ranges.chooseIPv4()
+				} else {
+					ranges.chooseIPv6()
+				}
 			}
-			ranges.parseCIDR(line) // 解析 IP 段，获得 IP、IP 范围、子网掩码
-			if IsIPv4(line) {      // 生成要测速的所有 IPv4 / IPv6 地址（单个/随机/全部）
+		} else {
+			// 文件不存在时使用内置 IP 列表
+			for _, cidr := range defaultIPv4Ranges {
+				ranges.parseCIDR(cidr)
 				ranges.chooseIPv4()
-			} else {
+			}
+			for _, cidr := range defaultIPv6Ranges {
+				ranges.parseCIDR(cidr)
 				ranges.chooseIPv6()
 			}
 		}
