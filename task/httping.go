@@ -30,7 +30,7 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration, string) {
 	hc := http.Client{
 		Timeout: time.Second * 2,
 		Transport: &http.Transport{
-			DialContext: getDialContext(ip),
+			DialContext: GetDialContext(ip),
 			//TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // 跳过证书验证
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
