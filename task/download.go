@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/XIU2/CloudflareSpeedTest/utils"
@@ -29,8 +30,10 @@ var (
 	Timeout = defaultTimeout
 	Disable = defaultDisableDownload
 
-	TestCount = defaultTestNum
-	MinSpeed  = defaultMinSpeed
+	TestCount       = defaultTestNum
+	MinSpeed        = defaultMinSpeed
+	DownloadWorkers = 5  // 下载测速并发数
+	FastCheck       = false // 快速终止模式
 )
 
 func checkDownloadDefault() {
@@ -65,7 +68,7 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 		TestCount = testNum
 	}
 
-	utils.Cyan.Printf("开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）\n", MinSpeed, TestCount, testNum)
+	utils.Cyan.Printf("开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d, 并发：%d）\n", MinSpeed, TestCount, testNum, DownloadWorkers)
 	// 控制 下载测速进度条 与 延迟测速进度条 长度一致（强迫症）
 	bar_a := len(strconv.Itoa(len(ipSet)))
 	bar_b := "     "
@@ -73,14 +76,48 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 		bar_b += " "
 	}
 	bar := utils.NewBar(TestCount, bar_b, "")
+
+	// 并行下载测速：worker pool 并发处理
+	type result struct {
+		index int
+		speed float64
+		colo  string
+	}
+	ipQueue := make(chan int, testNum)
 	for i := 0; i < testNum; i++ {
-		speed, colo := downloadHandler(ipSet[i].IP)
-		ipSet[i].DownloadSpeed = speed
-		if ipSet[i].Colo == "" { // 只有当 Colo 是空的时候，才写入，否则代表之前是 httping 测速并获取过了
-			ipSet[i].Colo = colo
+		ipQueue <- i
+	}
+	close(ipQueue)
+
+	var (
+		results = make(map[int]result, testNum)
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+	)
+
+	for w := 0; w < DownloadWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for idx := range ipQueue {
+				speed, colo := downloadHandler(ipSet[idx].IP)
+				mu.Lock()
+				results[idx] = result{idx, speed, colo}
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	// 按原始顺序收集结果并过滤
+	for i := 0; i < testNum; i++ {
+		r := results[i]
+		ipSet[i].DownloadSpeed = r.speed
+		if r.colo != "" && ipSet[i].Colo == "" { // 只有当 Colo 是空的时候，才写入，否则代表之前是 httping 测速并获取过了
+			ipSet[i].Colo = r.colo
 		}
 		// 在每个 IP 下载测速后，以 [下载速度下限] 条件过滤结果
-		if speed >= MinSpeed*1024*1024 {
+		if r.speed >= MinSpeed*1024*1024 {
 			bar.Grow(1, "")
 			speedSet = append(speedSet, ipSet[i]) // 高于下载速度下限时，添加到新数组中
 			if len(speedSet) == TestCount {       // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
@@ -208,6 +245,13 @@ func downloadHandler(ip *net.IPAddr) (float64, string) {
 			nextTime = timeStart.Add(timeSlice * time.Duration(timeCounter))
 			e.Add(float64(contentRead - lastContentRead))
 			lastContentRead = contentRead
+			// 快速终止模式：半程时速度仍低于期望的 50%，提前放弃该 IP
+			if FastCheck && timeCounter == 50 && MinSpeed > 0 {
+				currentSpeed := e.Value() / (Timeout.Seconds() / 120)
+				if currentSpeed < MinSpeed*1024*1024*0.5 {
+					return 0.0, colo
+				}
+			}
 		}
 		// 如果超出下载测速时间，则退出循环（终止测速）
 		if currentTime.After(timeEnd) {

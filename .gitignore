@@ -2,3 +2,5 @@ dist
 Releases
 *.exe
 *.csv
+.reasonix/
+CLAUDE.md

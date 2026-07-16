@@ -19,10 +19,17 @@ var (
 	// IPFile is the filename of IP Rangs
 	IPFile = defaultInputFile
 	IPText string
+
+	rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// WhiteList IP 前缀白名单（英文逗号分隔）
+	WhiteList string
+	// BlackList IP 前缀黑名单（英文逗号分隔）
+	BlackList string
 )
 
 func InitRandSeed() {
-	rand.Seed(time.Now().UnixNano())
+	rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
 func IsIPv4(ip string) bool {
@@ -33,7 +40,7 @@ func randIPEndWith(num byte) byte {
 	if num == 0 { // 对于 /32 这种单独的 IP
 		return byte(0)
 	}
-	return byte(rand.Intn(int(num)))
+	return byte(rng.Intn(int(num)))
 }
 
 type IPRanges struct {
@@ -147,6 +154,60 @@ func (r *IPRanges) chooseIPv6() {
 	}
 }
 
+// filterIPs 按白名单/黑名单过滤 IP
+func filterIPs(ips []*net.IPAddr) []*net.IPAddr {
+	var whitePrefixes, blackPrefixes []string
+	if WhiteList != "" {
+		for _, p := range strings.Split(WhiteList, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				whitePrefixes = append(whitePrefixes, p)
+			}
+		}
+	}
+	if BlackList != "" {
+		for _, p := range strings.Split(BlackList, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				blackPrefixes = append(blackPrefixes, p)
+			}
+		}
+	}
+	if len(whitePrefixes) == 0 && len(blackPrefixes) == 0 {
+		return ips
+	}
+	result := make([]*net.IPAddr, 0, len(ips))
+	for _, ip := range ips {
+		ipStr := ip.String()
+		// 黑名单优先：匹配则跳过
+		blocked := false
+		for _, p := range blackPrefixes {
+			if strings.HasPrefix(ipStr, p) {
+				blocked = true
+				break
+			}
+		}
+		if blocked {
+			continue
+		}
+		// 白名单：有白名单时，只保留匹配的
+		if len(whitePrefixes) > 0 {
+			matched := false
+			for _, p := range whitePrefixes {
+				if strings.HasPrefix(ipStr, p) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+		result = append(result, ip)
+	}
+	return result
+}
+
 func loadIPRanges() []*net.IPAddr {
 	ranges := newIPRanges()
 	if IPText != "" { // 从参数中获取 IP 段数据
@@ -186,5 +247,5 @@ func loadIPRanges() []*net.IPAddr {
 			}
 		}
 	}
-	return ranges.ips
+	return filterIPs(ranges.ips)
 }

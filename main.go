@@ -27,8 +27,8 @@ https://github.com/XIU2/CloudflareSpeedTest
 参数：
     -n 200
         延迟测速线程；越多延迟测速越快，性能弱的设备 (如路由器) 请勿太高；(默认 200 最多 1000)
-    -t 4
-        延迟测速次数；单个 IP 延迟测速的次数；(默认 4 次)
+    -t 5
+        延迟测速次数；单个 IP 延迟测速的次数；(默认 5 次)
     -dn 10
         下载测速数量；延迟测速并排序后，从最低延迟起下载测速的数量；(默认 10 个)
     -dt 10
@@ -68,6 +68,16 @@ https://github.com/XIU2/CloudflareSpeedTest
     -allip
         测速全部的IP；对 IP 段中的每个 IP (仅支持 IPv4) 进行测速；(默认 每个 /24 段随机测速一个 IP)
 
+    -w 104.17,104.19
+        IP 前缀白名单；只测速匹配指定前缀的 IP，英文逗号分隔；(默认 空)
+    -b 8.0,10.0
+        IP 前缀黑名单；排除匹配指定前缀的 IP，英文逗号分隔；(默认 空)
+
+    -fast
+        快速测速模式；下载速度测试半程不达标则提前放弃该 IP，减少耗时；(默认 关闭)
+    -dnw 5
+        下载测速并发数；同时下载测速的 IP 数量；(默认 5)
+
     -debug
         调试输出模式；会在一些非预期情况下输出更多日志以便判断原因；(默认 关闭)
 
@@ -79,7 +89,7 @@ https://github.com/XIU2/CloudflareSpeedTest
 	var minDelay, maxDelay, downloadTime int
 	var maxLossRate float64
 	flag.IntVar(&task.Routines, "n", 200, "延迟测速线程")
-	flag.IntVar(&task.PingTimes, "t", 4, "延迟测速次数")
+	flag.IntVar(&task.PingTimes, "t", 5, "延迟测速次数")
 	flag.IntVar(&task.TestCount, "dn", 10, "下载测速数量")
 	flag.IntVar(&downloadTime, "dt", 10, "下载测速时间")
 	flag.IntVar(&task.TCPPort, "tp", 443, "指定测速端口")
@@ -101,6 +111,12 @@ https://github.com/XIU2/CloudflareSpeedTest
 
 	flag.BoolVar(&task.Disable, "dd", false, "禁用下载测速")
 	flag.BoolVar(&task.TestAll, "allip", false, "测速全部 IP")
+
+	flag.StringVar(&task.WhiteList, "w", "", "IP 前缀白名单")
+	flag.StringVar(&task.BlackList, "b", "", "IP 前缀黑名单")
+
+	flag.BoolVar(&task.FastCheck, "fast", false, "快速测速模式")
+	flag.IntVar(&task.DownloadWorkers, "dnw", 5, "下载测速并发数")
 
 	flag.BoolVar(&utils.Debug, "debug", false, "调试输出模式")
 

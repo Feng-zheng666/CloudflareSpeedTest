@@ -16,7 +16,7 @@ const (
 	maxRoutine        = 1000
 	defaultRoutines   = 200
 	defaultPort       = 443
-	defaultPingTimes  = 4
+	defaultPingTimes  = 5
 )
 
 var (
@@ -86,7 +86,7 @@ func (p *Ping) start(ip *net.IPAddr) {
 }
 
 // bool connectionSucceed float32 time
-func (p *Ping) tcping(ip *net.IPAddr) (bool, time.Duration) {
+func (p *Ping) tcpingSingle(ip *net.IPAddr) (bool, time.Duration) {
 	startTime := time.Now()
 	var fullAddress string
 	if IsIPv4(ip.String()) {
@@ -98,24 +98,41 @@ func (p *Ping) tcping(ip *net.IPAddr) (bool, time.Duration) {
 	if err != nil {
 		return false, 0
 	}
-	defer conn.Close()
-	duration := time.Since(startTime)
-	return true, duration
+	conn.Close()
+	return true, time.Since(startTime)
+}
+
+// tcpingConcurrent 并发 TCP Ping，同一 IP 的多次探测并行执行，提升测速效率
+func (p *Ping) tcpingConcurrent(ip *net.IPAddr) (recv int, totalDelay time.Duration) {
+	type result struct {
+		ok    bool
+		delay time.Duration
+	}
+	results := make(chan result, PingTimes)
+	for i := 0; i < PingTimes; i++ {
+		go func() {
+			ok, delay := p.tcpingSingle(ip)
+			results <- result{ok, delay}
+		}()
+	}
+	for i := 0; i < PingTimes; i++ {
+		r := <-results
+		if r.ok {
+			recv++
+			totalDelay += r.delay
+		}
+	}
+	return
 }
 
 // pingReceived pingTotalTime
-func (p *Ping) checkConnection(ip *net.IPAddr) (recv int, totalDelay time.Duration, colo string) {
+func (p *Ping) checkConnection(ip *net.IPAddr) (recv int, totalDelay time.Duration, jitter time.Duration, colo string) {
 	if Httping {
-		recv, totalDelay, colo = p.httping(ip)
+		recv, totalDelay, jitter, colo = p.httping(ip)
 		return
 	}
 	colo = "" // TCPing 不获取 colo
-	for i := 0; i < PingTimes; i++ {
-		if ok, delay := p.tcping(ip); ok {
-			recv++
-			totalDelay += delay
-		}
-	}
+	recv, totalDelay = p.tcpingConcurrent(ip)
 	return
 }
 
@@ -129,7 +146,7 @@ func (p *Ping) appendIPData(data *utils.PingData) {
 
 // handle tcping
 func (p *Ping) tcpingHandler(ip *net.IPAddr) {
-	recv, totalDlay, colo := p.checkConnection(ip)
+	recv, totalDlay, jitter, colo := p.checkConnection(ip)
 	nowAble := len(p.csv)
 	if recv != 0 {
 		nowAble++
@@ -143,6 +160,7 @@ func (p *Ping) tcpingHandler(ip *net.IPAddr) {
 		Sended:   PingTimes,
 		Received: recv,
 		Delay:    totalDlay / time.Duration(recv),
+		Jitter:   jitter,
 		Colo:     colo,
 	}
 	p.appendIPData(data)
