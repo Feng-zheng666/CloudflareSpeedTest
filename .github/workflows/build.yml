@@ -5,6 +5,9 @@ on:
     branches: [master]
   workflow_dispatch:
 
+permissions:              # ← 加这行
+  contents: write         # ← 加这行
+
 jobs:
   build:
     runs-on: windows-latest
