@@ -3,7 +3,7 @@ name: Build & Release
 on:
   push:
     branches: [master]
-    tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,22 +18,31 @@ jobs:
       - name: 编译
         shell: pwsh
         run: |
-          $version = "${{ github.ref_type }}" -eq "tag" ? "${{ github.ref_name }}" : "dev"
-          go build -ldflags "-s -w -X main.version=$version" -o CloudflareSpeedTest.exe .
+          $date = Get-Date -Format "yyyyMMdd-HHmmss"
+          go build -ldflags "-s -w -X main.version=build.$date" -o CloudflareSpeedTest.exe .
 
-      - name: 创建/更新 Release
-        uses: ncipollo/release-action@v1
+      - uses: actions/upload-artifact@v4
         with:
-          tag: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
-          name: ${{ github.ref_type == 'tag' && github.ref_name || '最新开发版' }}
-          body: |
-            提交: ${{ github.sha }}
-            信息: ${{ github.event.head_commit.message || '自动编译' }}
-          artifacts: CloudflareSpeedTest.exe
-          artifactContentType: application/octet-stream
-          allowUpdates: true
-          prerelease: ${{ github.ref_type != 'tag' }}
-          makeLatest: ${{ github.ref_type == 'tag' && 'legacy' || 'true' }}
-          replacesArtifacts: true
+          name: CloudflareSpeedTest
+          path: CloudflareSpeedTest.exe
+
+  release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CloudflareSpeedTest
+
+      - name: 发布到 Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release-${{ github.run_number }}
+          name: "开发版 build #${{ github.run_number }}"
+          body: 手动编译，下载 CloudflareSpeedTest.exe 直接使用
+          files: CloudflareSpeedTest.exe
+          make_latest: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
