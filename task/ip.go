@@ -2,6 +2,7 @@ package task
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -208,6 +209,46 @@ func filterIPs(ips []*net.IPAddr) []*net.IPAddr {
 	return result
 }
 
+// hasIPv6 检查系统是否支持 IPv6
+func hasIPv6() bool {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, addr := range addrs {
+		if strings.Contains(addr.String(), ":") {
+			return true
+		}
+	}
+	return false
+}
+
+// subnetKey 返回 IP 的子网前缀：IPv4 /24，IPv6 /48
+func subnetKey(ip *net.IPAddr) string {
+	ipBytes := ip.IP
+	if ip4 := ipBytes.To4(); ip4 != nil {
+		return strconv.Itoa(int(ip4[0])) + "." + strconv.Itoa(int(ip4[1])) + "." + strconv.Itoa(int(ip4[2]))
+	}
+	// IPv6 /48：取前 6 字节（48 位）
+	return fmt.Sprintf("%02x%02x:%02x%02x:%02x%02x",
+		ipBytes[0], ipBytes[1], ipBytes[2], ipBytes[3], ipBytes[4], ipBytes[5])
+}
+
+// deduplicateSubnets 按 /24（IPv4）/ /48（IPv6）去重，同子网只保留第一个 IP
+func deduplicateSubnets(ips []*net.IPAddr) []*net.IPAddr {
+	seen := make(map[string]bool, len(ips))
+	result := make([]*net.IPAddr, 0, len(ips))
+	for _, ip := range ips {
+		key := subnetKey(ip)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, ip)
+	}
+	return result
+}
+
 func loadIPRanges() []*net.IPAddr {
 	ranges := newIPRanges()
 	if IPText != "" { // 从参数中获取 IP 段数据
@@ -268,5 +309,18 @@ func loadIPRanges() []*net.IPAddr {
 			}
 		}
 	}
-	return filterIPs(ranges.ips)
+	ips := filterIPs(ranges.ips)
+	// 系统无 IPv6 时自动过滤 IPv6 地址
+	if !hasIPv6() {
+		filtered := make([]*net.IPAddr, 0, len(ips))
+		for _, ip := range ips {
+			if IsIPv4(ip.String()) {
+				filtered = append(filtered, ip)
+			}
+		}
+		ips = filtered
+	}
+	// 按子网去重，同 /24 只保留一个 IP（不影响 -allip 模式）
+	ips = deduplicateSubnets(ips)
+	return ips
 }
