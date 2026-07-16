@@ -39,13 +39,13 @@ jobs:
           name: CloudflareSpeedTest
 
       - name: 发布到 Releases
-        uses: softprops/action-gh-release@v2
+        uses: ncipollo/release-action@v1
         with:
-          tag_name: release-${{ github.run_number }}
+          tag: release-${{ github.run_number }}
           name: "开发版 build #${{ github.run_number }}"
           body: 手动编译，下载 CloudflareSpeedTest.exe 直接使用
-          files: CloudflareSpeedTest.exe
-          make_latest: true
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: CloudflareSpeedTest.exe
+          makeLatest: true
+          allowUpdates: true
+          removeArtifacts: false
+          omitBodyDuringUpdate: true
